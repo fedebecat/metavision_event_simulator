@@ -16,6 +16,7 @@ from io import StringIO
 import os
 import numpy as np
 import torch
+from datetime import datetime
 from tqdm import tqdm
 
 from torchvision.utils import make_grid
@@ -40,120 +41,6 @@ class SuppressPrints:
     def __exit__(self, exc_type, exc_val, exc_tb):
         sys.stdout = self._original_stdout
 
-# def generate_events(mp4_files, metadatas, minbs = 1, maxbs = 20):
-    
-#     #read the hyperparameters from the config file 
-#     with open("hparams_simulator.yaml", "r") as file:
-#         config = yaml.safe_load(file)
-    
-#     device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    
-#     event_gpu = GPUEventSimulator(config['batch_size'], config['height'], config['width'], config['threshold_mu'],
-#                                   config['threshold_std'], config['refractory_period'], config['leak_rate_hz'], config['cutoff_hz'], config['shot_noise_hz'])
-
-#     event_gpu.to(device) 
-
-#     record_video = True
-#     nrows = 2 ** ((config['batch_size'].bit_length() - 1) // 2)
-#     padding = '00000'
-
-#     for filename in tqdm(mp4_files, desc="Generating events", unit="video"):
-#         try:
-#             with SuppressPrints():
-#                 if not os.path.exists(os.path.join(os.path.dirname(filename), "event_frames")):
-#                     os.mkdir(os.path.join(os.path.dirname(filename), "event_frames"))
-#                 if not os.path.exists(os.path.join(os.path.dirname(filename), "event_video")):
-#                     os.mkdir(os.path.join(os.path.dirname(filename), "event_video"))
-#                 dl = make_video_dataset(
-#                     os.path.dirname(filename), config['num_workers'], config['batch_size'], config['height'] , config['width'], config['min_frames_per_video'], config['max_frames_per_video'],
-#                     metadatas, min_frames=minbs, max_frames=maxbs, rgb=False)
-#                 dl.to(device)
-#                 pause = False
-#                 last_images = None
-#                 if record_video:
-#                     pass
-#                     #out = cv2.VideoWriter(os.path.join(os.path.dirname(filename), 'event_video.mp4'), cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), 5, (config['width'], config['height']))
-#                 for i, batch in enumerate(dl):
-
-#                     images = batch['images'].squeeze(dim=0)
-
-#                     first_times = batch['first_times']
-#                     timestamps = batch['timestamps']
-#                     num_frames = batch['video_len']
-
-#                     if pause and last_images is not None:
-#                         images = last_images
-
-
-#                     # randomize parameters
-#                     # event_gpu.randomize_broken_pixels(first_times, video_proba=0.1)
-#                     # event_gpu.randomize_thresholds(first_times)
-#                     # event_gpu.randomize_cutoff(first_times)
-#                     # event_gpu.randomize_shot(first_times)
-#                     # event_gpu.randomize_refractory_periods(first_times)
-
-#                     log_images = event_gpu.dynamic_moving_average(images, num_frames, timestamps, first_times) #Converts byte images to lof and performs a pass-band motion blur of incoming images. This simulates the latency of the photodiode w.r.t to incoming light dynamic.
-
-#                     mode = config['mode']
-#                     nbins = config['nbins']
-#                     if mode == 'counts':
-#                         idx = 1
-#                         counts = event_gpu.count_events(log_images, num_frames, timestamps, first_times)
-#                     elif mode == 'event_volume':
-#                         voxels = event_gpu.event_volume(log_images, num_frames, timestamps,
-#                                                         first_times, nbins, mode, split_channels=config['split_channels'])
-#                         #Computes a volume of discretized images formed after the events, without storing the AER events themselves. We go from simulation directly to this space-time quantized representation.
-#                         #You can obtain the event-volume of [Unsupervised Event-based Learning of Optical Flow, Zhu et al. 2018] by specifying the mode to “bilinear” or you can obtain a stack of histograms if mode is set to “nearest”.
-#                         if config['split_channels']:
-#                             counts = voxels[:, nbins:] - voxels[:, :nbins]
-#                             counts = counts.mean(dim=1)
-#                         else:
-#                             counts = voxels.mean(dim=1)
-#                     else:
-#                         events = event_gpu.get_events(log_images, num_frames, timestamps, first_times)
-#                         counts = event_image(events, config['batch_size'], config['height'], config['width'])
-
-#                     #print(" events shape: ", events.shape)
-#                     #convert "events" to image AND PLOTit using plt.imshow
-#                     #capire questi eventi che cazzo sono!!!
-
-#                     im = 255 * normalize_tiles(counts.unsqueeze(1).float(), num_stds=3) #Normalizes tiles, allows us to have normalized views (we filter outliers + standardize)
-
-#                     #im = make_grid(im, nrow=nrows).detach().cpu().permute(1, 2, 0).numpy().astype(np.uint8)
-#                     im = make_grid(im, nrow=nrows).detach().cpu().permute(1, 2, 0).numpy().astype(np.uint8)
-
-#                     blur_images = torch.exp(log_images) * 255
-#                     first_frames_indices = torch.cat((torch.zeros(1, device=images.device), num_frames.cumsum(0)))[
-#                         :-1].long()
-#                     imin = make_grid(
-#                         blur_images[None, ..., first_frames_indices].permute(3, 0, 1, 2), nrow=nrows).detach().cpu().permute(
-#                         1, 2, 0).numpy().astype(np.uint8)
-#                     final = np.concatenate((im, imin), axis=1)
-#                     final = im
-#                     #save the image
-#                     index = padding [:-(len(str(i+1)))] + str(i+1)
-#                     if minbs == 1 and maxbs == 2:
-#                         if i == 0:
-#                             pass
-#                         else:
-#                             index = padding [:-(len(str(i)))] + str(i)
-#                             cv2.imwrite(os.path.join(os.path.dirname(filename), "event_frames", f"frame_{index}.jpg"), final)
-#                     else:
-#                         cv2.imwrite(os.path.join(os.path.dirname(filename), "event_frames", f"frame_{index}.jpg"), final)
-#                     if record_video:
-#                         pass
-#                         #out.write(final)
-#                     last_images = images
-#                 #cv2.destroyWindow('all')
-#                 os.system("ffmpeg -r 25 -i " + os.path.join(os.path.dirname(filename), "event_frames", f"frame_%05d.jpg") + " -c:v libx265 -crf 10 -y " + os.path.join(os.path.dirname(filename), "event_video", 'event_video.mp4') + " -loglevel quiet > NUL 2>&1")
-#                 if record_video:
-#                     pass
-#                     #out.release()
-#         except Exception as e:
-#             print(e)
-#             continue
-        
 
 def make_video_dataset(
         path, num_workers, batch_size, height, width, min_length, max_length, metadatas, mode='frames',
@@ -205,6 +92,25 @@ def make_video_dataset(
     dataloader.dic_params_video_dataset = dic_params_video_dataset
     return dataloader
 
+def read_timestamp(file_path_now, file_path_first):
+    filename_first = os.path.basename(file_path_first)
+    first_timestamp = '.'.join(filename_first.split('_')[2].split('.')[:-1])
+
+    filename_now = os.path.basename(file_path_now)
+    timestamp_now = '.'.join(filename_now.split('_')[2].split('.')[:-1])
+
+    # Define the format of the timestamps
+    fmt = '%H:%M:%S.%f'
+
+    dt_start = datetime.strptime(first_timestamp, fmt)
+    dt_now = datetime.strptime(timestamp_now, fmt)
+
+    difference = dt_now - dt_start
+
+    difference_in_milliseconds = difference.total_seconds() * 1000
+
+    return difference_in_milliseconds
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Rename files in a directory')
@@ -226,7 +132,12 @@ if __name__ == "__main__":
 
     #src_paths = ['test/test.avi', 'test/test2.avi']
     #src_paths = glob(f'/media/becattini/399B724D60527D8A/workspace/metavision_event_simulator/src_path/JPG_10/*/*/*/video.mkv')
-    src_paths = glob('/media/becattini/399B724D60527D8A/workspace/metavision_event_simulator/test/*.avi')
+    #src_paths = glob('/media/becattini/399B724D60527D8A/workspace/metavision_event_simulator/test/*.avi')
+
+    src_base_path = '/home/becattini/Datasets/FACEMORPHIC/recordings/fed0805189eb453091381dda3d8cadc2/AU_1/'
+    dst_base_path = '/media/becattini/399B724D60527D8A/workspace/metavision_event_simulator/dst_path/'
+
+    src_paths = glob(f'{src_base_path}/frames_*')
     print(src_paths)
 
     metadatas = []
@@ -253,41 +164,15 @@ if __name__ == "__main__":
     padding = '00000'
 
     for filename in tqdm(src_paths, desc="Generating events", unit="video"):
-        # try:
-        #     with SuppressPrints():
-        if not os.path.exists(os.path.join(os.path.dirname(filename), "event_frames")):
-            os.mkdir(os.path.join(os.path.dirname(filename), "event_frames"))
-        if not os.path.exists(os.path.join(os.path.dirname(filename), "event_video")):
-            os.mkdir(os.path.join(os.path.dirname(filename), "event_video"))
-        dl = make_video_dataset(
-            os.path.dirname(filename), config['num_workers'], config['batch_size'], config['height'] , config['width'], config['min_frames_per_video'], config['max_frames_per_video'],
-            metadatas, min_frames=minbs, max_frames=maxbs, rgb=False)
-        dl.to(device)
-        pause = False
-        last_images = None
-        if record_video:
-            pass
-            #out = cv2.VideoWriter(os.path.join(os.path.dirname(filename), 'event_video.mp4'), cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), 5, (config['width'], config['height']))
-        for i, batch in enumerate(dl):
+        # read frames
+        frame_list = natsorted(glob(os.path.join(filename, '*.jpg')))
+        for i, frame in enumerate(frame_list):
+            print(i)
 
-            images = batch['images'].squeeze(dim=0)
-
-            first_times = batch['first_times']
-            print('first_times', first_times)
-            timestamps = batch['timestamps']
-            print('timestamps', timestamps)
-            num_frames = batch['video_len']
-
-            if pause and last_images is not None:
-                images = last_images
-
-
-            # randomize parameters
-            # event_gpu.randomize_broken_pixels(first_times, video_proba=0.1)
-            # event_gpu.randomize_thresholds(first_times)
-            # event_gpu.randomize_cutoff(first_times)
-            # event_gpu.randomize_shot(first_times)
-            # event_gpu.randomize_refractory_periods(first_times)
+            images = torch.tensor(cv2.imread(frame,cv2.IMREAD_GRAYSCALE)).to(device)[...,None] #batch['images'].squeeze(dim=0)
+            first_times = torch.tensor([0]).to(device).float() #batch['first_times']
+            timestamps = torch.tensor([[read_timestamp(frame, frame_list[0])]]).to(device) # batch['timestamps']
+            num_frames = torch.tensor([1]).to(device) #batch['video_len']
 
             log_images = event_gpu.dynamic_moving_average(images, num_frames, timestamps, first_times) #Converts byte images to lof and performs a pass-band motion blur of incoming images. This simulates the latency of the photodiode w.r.t to incoming light dynamic.
 
@@ -310,13 +195,7 @@ if __name__ == "__main__":
                 events = event_gpu.get_events(log_images, num_frames, timestamps, first_times)
                 counts = event_image(events, config['batch_size'], config['height'], config['width'])
 
-            #print(" events shape: ", events.shape)
-            #convert "events" to image AND PLOTit using plt.imshow
-            #capire questi eventi che cazzo sono!!!
-
             im = 255 * normalize_tiles(counts.unsqueeze(1).float(), num_stds=3) #Normalizes tiles, allows us to have normalized views (we filter outliers + standardize)
-
-            #im = make_grid(im, nrow=nrows).detach().cpu().permute(1, 2, 0).numpy().astype(np.uint8)
             im = make_grid(im, nrow=nrows).detach().cpu().permute(1, 2, 0).numpy().astype(np.uint8)
 
             blur_images = torch.exp(log_images) * 255
@@ -329,23 +208,11 @@ if __name__ == "__main__":
             final = im
             #save the image
             index = padding [:-(len(str(i+1)))] + str(i+1)
-            if minbs == 1 and maxbs == 2:
-                if i == 0:
-                    pass
-                else:
-                    index = padding [:-(len(str(i)))] + str(i)
-                    cv2.imwrite(os.path.join(os.path.dirname(filename), "event_frames", f"frame_{index}.jpg"), final)
-            else:
-                cv2.imwrite(os.path.join(os.path.dirname(filename), "event_frames", f"frame_{index}.jpg"), final)
-            if record_video:
-                pass
-                #out.write(final)
+
+            save_path = frame.replace(src_base_path, dst_base_path)
+            # create folder structure
+            if not os.path.exists(os.path.dirname(save_path)):
+                os.makedirs(os.path.dirname(save_path))
+            cv2.imwrite(save_path.replace(':','#'), final)
             last_images = images
-        #cv2.destroyWindow('all')
-        os.system("ffmpeg -r 25 -i " + os.path.join(os.path.dirname(filename), "event_frames", f"frame_%05d.jpg") + " -c:v libx265 -crf 10 -y " + os.path.join(os.path.dirname(filename), "event_video", 'event_video.mp4') + " -loglevel quiet > NUL 2>&1")
-        if record_video:
-            pass
-            #out.release()
-        # except Exception as e:
-        #     print(e)
-        #     continue
+#        os.system("ffmpeg -r 25 -i " + os.path.join(os.path.dirname(filename), "event_frames", f"frame_%05d.jpg") + " -c:v libx265 -crf 10 -y " + os.path.join(os.path.dirname(filename), "event_video", 'event_video.mp4') + " -loglevel quiet > NUL 2>&1")
